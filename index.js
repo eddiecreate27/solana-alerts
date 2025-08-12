@@ -10,6 +10,9 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const SOL_THRESHOLD = parseFloat(process.env.SOL_THRESHOLD || "2");
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || ""; // must match Helius authHeader
 
+// Store already-seen token mints
+const seenTokens = new Set();
+
 const toSol = (lamports) => (lamports ? Number(lamports) / 1e9 : 0);
 
 async function sendDiscord(msg) {
@@ -20,6 +23,7 @@ async function sendDiscord(msg) {
     body: JSON.stringify({ content: msg })
   });
 }
+
 async function sendTelegram(msg) {
   if (!TELEGRAM_TOKEN || !TELEGRAM_CHAT_ID) return;
   await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
@@ -59,6 +63,17 @@ app.post("/webhook", async (req, res) => {
 
       const isCreate = type === "CREATE" || type === "PROGRAM_DEPLOY";
       const isLargeTransfer = (type === "TRANSFER" || type === "SOL_TRANSFER") && sol >= SOL_THRESHOLD;
+
+      // Token filtering: skip alerts if we've already seen this mint
+      if (isNewMint) {
+        const mintAddress = e.accountAddresses?.[0] || account;
+        if (seenTokens.has(mintAddress)) {
+          console.log(`Skipping existing token: ${mintAddress}`);
+          continue;
+        }
+        seenTokens.add(mintAddress);
+        console.log(`🚀 New token detected: ${mintAddress}`);
+      }
 
       if (isNewMint || isCreate || isLargeTransfer) {
         const label = isNewMint ? "NEW TOKEN MINT" : type || "EVENT";
